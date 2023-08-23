@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+
+require('../models/connection');
 const Trip = require("../models/trips");
 const User = require("../models/users");
 const Event = require("../models/events");

@@ -1,5 +1,7 @@
 var express = require("express");
 var router = express.Router();
+
+require("../models/connection");
 const User = require("../models/users");
 const bcrypt = require("bcrypt");
 const uid2 = require("uid2");
@@ -34,6 +36,7 @@ router.post("/signup", async (req, res) => {
       username: req.body.username,
       email: req.body.email,
       password: hash,
+      friends: [],
       active: true,
     };
     savedUser = await User.findByIdAndUpdate(existingUser._id, { ...updateUser });
@@ -47,6 +50,7 @@ router.post("/signup", async (req, res) => {
       username: req.body.username,
       email: req.body.email,
       password: hash,
+      friends: [],
       active: true,
     });
     savedUser = await newUser.save();
@@ -68,6 +72,7 @@ router.post("/signup", async (req, res) => {
       username: savedUser.username,
       email: savedUser.email,
       image: savedUser.image,
+      friends: savedUser.friends,
     },
     trips,
   });
@@ -100,6 +105,7 @@ router.post("/signin", async (req, res) => {
         username: user.username,
         email: user.email,
         image: user.image,
+        friends: user.friends,
       },
       trips,
     });
@@ -107,7 +113,6 @@ router.post("/signin", async (req, res) => {
     res.json({ result: false, error: "User not found or wrong password" });
   }
 });
-
 
 // Route pour la connexion avec token (isconected)
 router.post("/isconnected", async (req, res) => {
@@ -135,6 +140,7 @@ router.post("/isconnected", async (req, res) => {
         username: user.username,
         email: user.email,
         image: user.image,
+        friends: user.friends,
       },
       trips,
     });
@@ -165,8 +171,71 @@ router.get("/list", async (req, res) => {
   res.json({ users });
 });
 
+router.get("/friendsList", async (req, res) => {
+  // On vérifie si les infos obligatoires sont bien renseignées
+  if (!checkBody(req.query, ["token"])) {
+    return res.status(404).json({ result: false, error: "Missing or empty fields" });
+  }
+
+  // On vérifie si l'utilisateur existe, et si oui on renvoie ses infos
+  const user = await checkTokenSession(req.query.token);
+  if (!user) {
+    return res.status(404).json({ result: false, error: "User not found" });
+  }
+  await user.populate("friends");
+  // On récupère les données de tous les friends du user
+  const friendsData = user.friends;
+  // On filtre les propriétés que l'on veut renvoyer pour chaque ami
+  const friends = friendsData.map((friend) => {
+    return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
+  });
+  res.json({ friends });
+});
+
+router.put("/updateFriends", async (req, res) => {
+  // On vérifie si les infos obligatoires sont bien renseignées
+  if (!checkBody(req.body, ["token", "tokenFriend", "modifFriend"])) {
+    return res.status(404).json({ result: false, error: "Missing or empty fields" });
+  }
+
+  const { token, tokenFriend, modifFriend } = req.body;
+  try {
+    // On vérifie si l'utilisateur existe, et si oui on renvoie ses infos
+    const user = await User.findOne({ tokenSession: token }).populate("friends");
+    if (!user) {
+      return res.status(404).json({ result: false, error: "User not found" });
+    }
+    // On vérifie si le friend existe, et si oui on renvoie ses infos
+    const friend = await User.findOne({ tokenUser: tokenFriend }).populate("friends");
+    if (!friend) {
+      return res.status(404).json({ result: false, error: "Friend not found" });
+    }
+
+    // Si modiFriend est égale à true cela veut dire qu'on ajout un ami
+    if (modifFriend) {
+      // On ajoute l'ami dans la liste d'amis de l'utilisateur et vice versa
+      await User.updateOne({ _id: user._id }, { $push: { friends: friend._id } });
+      await User.updateOne({ _id: friend._id }, { $push: { friends: user._id } });
+    }
+    // Si modiFriend est égale à false cela veut dire qu'on supprime un ami
+    if (!modifFriend) {
+      // On supprime l'ami de la liste d'amis de l'utilisateur et vice versa
+      await User.updateOne({ _id: user._id }, { $pull: { friends: friend._id } });
+      await User.updateOne({ _id: friend._id }, { $pull: { friends: user._id } });
+    }
+
+    const listFriends = user.friends.map((friend)=> {
+      return {tokenUser: friend.tokenUser, username: friend.username, email: friend.email}
+    })
+    res.json({ result: true, friends: listFriends  });
+  } catch (error) {
+    console.error("Erreur lors de l'update de la list des friends du user :", error);
+    return res.status(404).json({ result: false, error: "Erreur lors de l'update de la list des friends du user" });
+  }
+});
+
 // Route pour modifier les informations de l'utilisateur
-router.put("/update", async (req, res) => {
+router.put("/updateInfos", async (req, res) => {
   // On vérifie si les infos obligatoires sont bien renseignées
   if (!checkBody(req.body, ["token", "username", "email"])) {
     return res.status(404).json({ result: false, error: "Missing or empty fields" });
@@ -188,7 +257,7 @@ router.put("/update", async (req, res) => {
       hash = bcrypt.hashSync(password, 10);
       updateUser = await User.findOneAndUpdate(
         { _id: user._id },
-        { $set: { username, email, password: hash} },
+        { $set: { username, email, password: hash } },
         { new: true } // Retourne le document mis à jour
       );
     } else {
@@ -197,7 +266,6 @@ router.put("/update", async (req, res) => {
         { $set: { username, email } },
         { new: true } // Retourne le document mis à jour
       );
-  
     }
     if (!updateUser) {
       return res.status(404).json({ result: false, error: "Failed to update user" });

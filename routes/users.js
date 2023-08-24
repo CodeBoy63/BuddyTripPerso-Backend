@@ -29,18 +29,19 @@ router.post("/signup", async (req, res) => {
     return res.json({ result: false, error: "This email address already exists" });
   }
   // Si l'utilisateur est enregistré mais non actif (il a été ajouté par un ami)
-  else if (existingUser && !existingUser.active) {
-    const hash = bcrypt.hashSync(req.body.password, 10);
-    const updateUser = {
-      tokenSession: uid2(32),
-      username: req.body.username,
-      email: req.body.email,
-      password: hash,
-      friends: [],
-      active: true,
-    };
-    savedUser = await User.findByIdAndUpdate(existingUser._id, { ...updateUser });
-  }
+  // else if (existingUser && !existingUser.active) {
+  //   const hash = bcrypt.hashSync(req.body.password, 10);
+  //   const updateUser = {
+  //     tokenSession: uid2(32),
+  //     username: req.body.username,
+  //     email: req.body.email,
+  //     password: hash,
+  //     friends: [],
+  //     active: true,
+  //   };
+  //   savedUser = await User.findByIdAndUpdate(existingUser._id, { ...updateUser });
+  // }
+  
   // Si l'utilisateur est nouveau
   else {
     const hash = bcrypt.hashSync(req.body.password, 10);

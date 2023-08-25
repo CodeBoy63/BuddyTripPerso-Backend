@@ -41,7 +41,7 @@ router.post("/signup", async (req, res) => {
   //   };
   //   savedUser = await User.findByIdAndUpdate(existingUser._id, { ...updateUser });
   // }
-  
+
   // Si l'utilisateur est nouveau
   else {
     const hash = bcrypt.hashSync(req.body.password, 10);
@@ -162,14 +162,23 @@ router.get("/list", async (req, res) => {
   if (!user) {
     return res.status(404).json({ result: false, error: "User not found" });
   }
+  // Récupération des amis de l'utilisateur
+  await user.populate("friends");
+  const findFriends = user.friends.map((friend) => friend._id);
 
   // On récupère les données de tous les users sauf celui qui fait la requête
   const findUsers = await User.find({ _id: { $ne: user._id } });
+
+  // Filtrage des utilisateurs non-amis
+  const filteredUsers = findUsers.filter((user) => {
+    return !findFriends.includes(user._id);
+  });
+
   // On filtre les données que l'on veut renvoyer
-  const users = findUsers.map((user) => {
+  const users = filteredUsers.map((user) => {
     return { tokenUser: user.tokenUser, username: user.username, email: user.email };
   });
-  res.json({ users });
+  res.json({ reuslt: true,users });
 });
 
 router.get("/friendsList", async (req, res) => {
@@ -190,7 +199,7 @@ router.get("/friendsList", async (req, res) => {
   const friends = friendsData.map((friend) => {
     return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
   });
-  res.json({ friends });
+  res.json({ reuslt: true, friends });
 });
 
 router.put("/updateFriends", async (req, res) => {
@@ -200,6 +209,9 @@ router.put("/updateFriends", async (req, res) => {
   }
 
   const { token, tokenFriend, modifFriend } = req.body;
+  console.log("token", token);
+  console.log("tkFriend", tokenFriend);
+  console.log("modifFriend",modifFriend);
   try {
     // On vérifie si l'utilisateur existe, et si oui on renvoie ses infos
     const user = await User.findOne({ tokenSession: token }).populate("friends");
@@ -225,10 +237,10 @@ router.put("/updateFriends", async (req, res) => {
       await User.updateOne({ _id: friend._id }, { $pull: { friends: user._id } });
     }
 
-    const listFriends = user.friends.map((friend)=> {
-      return {tokenUser: friend.tokenUser, username: friend.username, email: friend.email}
-    })
-    res.json({ result: true, friends: listFriends  });
+    const listFriends = user.friends.map((friend) => {
+      return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
+    });
+    res.json({ result: true, friends: listFriends });
   } catch (error) {
     console.error("Erreur lors de l'update de la list des friends du user :", error);
     return res.status(404).json({ result: false, error: "Erreur lors de l'update de la list des friends du user" });

@@ -214,11 +214,10 @@ router.get("/friendsList", async (req, res) => {
 });
 
 router.put("/updateFriends", async (req, res) => {
-  console.log("token", req.token);
-  console.log("tkFriend", req.tokenFriend);
-  console.log("modifFriend", req.modifFriend);
+  console.log("token", req.body.token);
+  console.log("tkFriend", req.body.tokenFriend);
   // On vérifie si les infos obligatoires sont bien renseignées
-  if (!checkBody(req.body, ["token", "tokenFriend", "modifFriend"])) {
+  if (!checkBody(req.body, ["token", "tokenFriend"])) {
     return res.status(404).json({ result: false, error: "Missing or empty fields" });
   }
   const { token, tokenFriend, modifFriend } = req.body;

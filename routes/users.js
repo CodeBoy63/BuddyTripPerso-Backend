@@ -90,11 +90,18 @@ router.post("/signin", async (req, res) => {
   if (user) {
     //if (user && bcrypt.compareSync(req.body.password, user.password)) {
     await user.populate("trips");
+    await user.populate("friends");
     await user.populate([{ path: "trips.user" }, { path: "trips.participants" }]);
+
+    // On récupère les données de tous les friends du user
+    const friendsData = user.friends;
+    // On filtre les propriétés que l'on veut renvoyer pour chaque ami
+    const friends = friendsData.map((friend) => {
+      return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
+    });
 
     // On filtre la date pour afficher seulement les Trip dont la date de fin est égale ou après aujourd'hui
     const tripsBrut = user.trips.filter((trip) => new Date(trip.dateEnd) >= dateNow);
-
     // On filtre les infos que l'on veut renvoyer en front
     const trips = tripsBrut.map((trip) => parseTrip(trip));
 
@@ -106,7 +113,7 @@ router.post("/signin", async (req, res) => {
         username: user.username,
         email: user.email,
         image: user.image,
-        friends: user.friends,
+        friends: friends,
       },
       trips,
     });
@@ -118,18 +125,25 @@ router.post("/signin", async (req, res) => {
 // Route pour la connexion avec token (isconected)
 router.post("/isconnected", async (req, res) => {
   if (!checkBody(req.body, ["token"])) {
-    return res.json({ result: false, error: "" });
+    return res.json({ result: false, error: "Missing or empty fields" });
   }
 
   // Vérifier si l'utilisateur avec ce tokenSession existe
   const user = await User.findOne({ tokenSession: req.body.token, active: true });
   if (user) {
     await user.populate("trips");
+    await user.populate("friends");
     await user.populate([{ path: "trips.user" }, { path: "trips.participants" }]);
+
+    // On récupère les données de tous les friends du user
+    const friendsData = user.friends;
+    // On filtre les propriétés que l'on veut renvoyer pour chaque ami
+    const friends = friendsData.map((friend) => {
+      return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
+    });
 
     // On filtre la date pour afficher seulement les Trip dont la date de fin est égale ou après aujourd'hui
     const tripsBrut = user.trips.filter((trip) => new Date(trip.dateEnd) >= dateNow);
-
     // On filtre les infos que l'on veut renvoyer en front
     const trips = tripsBrut.map((trip) => parseTrip(trip));
 
@@ -141,7 +155,7 @@ router.post("/isconnected", async (req, res) => {
         username: user.username,
         email: user.email,
         image: user.image,
-        friends: user.friends,
+        friends: friends,
       },
       trips,
     });
@@ -166,19 +180,16 @@ router.get("/list", async (req, res) => {
   await user.populate("friends");
   const findFriends = user.friends.map((friend) => friend._id);
 
-  // On récupère les données de tous les users sauf celui qui fait la requête
-  const findUsers = await User.find({ _id: { $ne: user._id } });
-
-  // Filtrage des utilisateurs non-amis
-  const filteredUsers = findUsers.filter((user) => {
-    return !findFriends.includes(user._id);
+  // On récupère les données de tous les users sauf celui qui fait la requête et ses amis
+  const findUsers = await User.find({
+    _id: { $ne: user._id, $nin: findFriends }
   });
 
   // On filtre les données que l'on veut renvoyer
-  const users = filteredUsers.map((user) => {
-    return { tokenUser: user.tokenUser, username: user.username, email: user.email };
+  const users = findUsers.map((otherUser) => {
+    return { tokenUser: otherUser.tokenUser, username: otherUser.username, email: otherUser.email };
   });
-  res.json({ reuslt: true,users });
+  res.json({ reuslt: true, users });
 });
 
 router.get("/friendsList", async (req, res) => {
@@ -203,15 +214,15 @@ router.get("/friendsList", async (req, res) => {
 });
 
 router.put("/updateFriends", async (req, res) => {
+  console.log("token", req.token);
+  console.log("tkFriend", req.tokenFriend);
+  console.log("modifFriend", req.modifFriend);
   // On vérifie si les infos obligatoires sont bien renseignées
   if (!checkBody(req.body, ["token", "tokenFriend", "modifFriend"])) {
     return res.status(404).json({ result: false, error: "Missing or empty fields" });
   }
-
   const { token, tokenFriend, modifFriend } = req.body;
-  console.log("token", token);
-  console.log("tkFriend", tokenFriend);
-  console.log("modifFriend",modifFriend);
+
   try {
     // On vérifie si l'utilisateur existe, et si oui on renvoie ses infos
     const user = await User.findOne({ tokenSession: token }).populate("friends");
@@ -223,6 +234,8 @@ router.put("/updateFriends", async (req, res) => {
     if (!friend) {
       return res.status(404).json({ result: false, error: "Friend not found" });
     }
+
+    console.log("user", user);
 
     // Si modiFriend est égale à true cela veut dire qu'on ajout un ami
     if (modifFriend) {
@@ -237,9 +250,11 @@ router.put("/updateFriends", async (req, res) => {
       await User.updateOne({ _id: friend._id }, { $pull: { friends: user._id } });
     }
 
-    const listFriends = user.friends.map((friend) => {
+    const updatedUser = await User.findOne({ tokenSession: token }).populate("friends");
+    const listFriends = updatedUser.friends.map((friend) => {
       return { tokenUser: friend.tokenUser, username: friend.username, email: friend.email };
     });
+    console.log("listFriends", listFriends);
     res.json({ result: true, friends: listFriends });
   } catch (error) {
     console.error("Erreur lors de l'update de la list des friends du user :", error);
